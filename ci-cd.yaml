@@ -1,0 +1,44 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage 1: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Stage 3: Install Dependencies & Run Tests
+        run: |
+          pip install -r requirements.txt
+          pytest test_app.py
+
+      - name: Generate Unique Image Tag
+        id: meta
+        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Stage 4: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/temp-converter:${{ steps.meta.outputs.tag }}
+
+      - name: Stage 5: Deploy to Kubernetes
+        run: |
+          sed -i 's|DOCKER_HUB_USERNAME/temp-converter:IMAGE_TAG|${{ secrets.DOCKERHUB_USERNAME }}/temp-converter:${{ steps.meta.outputs.tag }}|g' k8s-deployment.yaml
+          kubectl apply -f k8s-deployment.yaml
